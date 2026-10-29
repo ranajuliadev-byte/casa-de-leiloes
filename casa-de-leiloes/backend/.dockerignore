@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+test
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+*.log
+prisma.sandbox.config.ts
+Dockerfile
+.dockerignore

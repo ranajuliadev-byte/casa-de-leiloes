@@ -1,0 +1,198 @@
+// Casa de Leilões — schema do banco (PostgreSQL)
+// Todos os valores monetários são inteiros em CENTAVOS para evitar erros de ponto flutuante.
+// Valores por operação (lance, depósito, preço) são Int; saldos de carteira são BigInt
+// (o leiloeiro acumula créditos de muitos arremates e estouraria o Int de 32 bits).
+
+generator client {
+  provider = "prisma-client-js"
+  // Client "Rust-free": usa o driver `pg` via adapter, sem baixar binários do Prisma.
+  previewFeatures = ["queryCompiler", "driverAdapters"]
+  engineType      = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  AUCTIONEER // leiloeiro (vendedor): cria e gerencia lotes, não dá lances
+  BIDDER // licitante (cliente): deposita, dá lances, arremata
+}
+
+enum LedgerType {
+  DEPOSIT // depósito simulado (+saldo total)
+  COMMIT // lance líder: valor passa a ficar comprometido
+  RELEASE // superado / lote cancelado: valor volta ao disponível
+  SETTLEMENT_DEBIT // arremate: debitado do vencedor
+  SETTLEMENT_CREDIT // arremate: creditado ao leiloeiro
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+
+  wallet   Wallet?
+  lots     Lot[]     @relation("AuctioneerLots")
+  bids     Bid[]
+  leading  Lot[]     @relation("LotLeader")
+  won      Lot[]     @relation("LotWinner")
+  receipts Receipt[]
+}
+
+model Wallet {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  balanceCents   BigInt   @default(0) // saldo total
+  committedCents BigInt   @default(0) // saldo comprometido (soma dos lances em que lidera)
+  updatedAt      DateTime @updatedAt
+
+  // Cadeia do extrato desta carteira (ver src/common/ledger.ts): nº de lançamentos,
+  // hash do último e assinatura Ed25519 de (carteira, dono, nº, head, saldo, comprometido).
+  // Carteira nova sem lançamentos: head/assinatura nulos.
+  ledgerCount     Int     @default(0)
+  ledgerHead      String?
+  ledgerSignature String?
+
+  entries LedgerEntry[]
+}
+
+// Extrato da carteira (append-only, encadeado por carteira)
+model LedgerEntry {
+  id          String     @id @default(uuid())
+  walletId    String
+  wallet      Wallet     @relation(fields: [walletId], references: [id])
+  seq         Int // 1..n dentro da carteira
+  type        LedgerType
+  amountCents Int
+  lotId       String?
+  lot         Lot?       @relation(fields: [lotId], references: [id])
+  // Hash do lance a que o lançamento se refere (COMMIT/RELEASE: o lance comprometido
+  // ou superado; estorno/arremate: o último lance). A auditoria cruza com a cadeia do lote.
+  bidHash     String?
+  description String?
+  createdAt   DateTime   @default(now())
+  prevHash    String // hash do lançamento anterior da carteira (ou gênese da carteira)
+  hash        String // SHA-256 do payload canônico (inclui prevHash)
+
+  @@unique([walletId, seq])
+  @@index([walletId, createdAt])
+  @@index([lotId])
+}
+
+// Cache local das obras vindas da API pública (Art Institute of Chicago).
+// Permite buscar itens mesmo com a API fora do ar (modo degradado).
+model Artwork {
+  id         String   @id // "aic:<id externo>"
+  externalId Int
+  source     String   @default("aic")
+  title      String
+  artist     String?
+  dateLabel  String?
+  medium     String?
+  dimensions String?
+  origin     String?
+  imageUrl   String?
+  thumbUrl   String?
+  raw        Json?
+  fetchedAt  DateTime @default(now())
+
+  lots Lot[]
+
+  @@index([title])
+}
+
+model Lot {
+  id           String @id @default(uuid())
+  auctioneerId String
+  auctioneer   User   @relation("AuctioneerLots", fields: [auctioneerId], references: [id])
+
+  // Snapshot do item no momento da criação — vitrine, sala, auditoria e
+  // comprovante NÃO dependem da API externa depois disso.
+  artworkId   String?
+  artwork     Artwork? @relation(fields: [artworkId], references: [id])
+  title       String
+  description String?
+  imageUrl    String?
+  attributes  Json // { artist, date, medium, dimensions, origin, source, externalId }
+
+  startingPriceCents Int
+  minIncrementCents  Int
+  startsAt           DateTime
+  endsAt             DateTime // fim vigente (pode ser prorrogado pelo anti-sniping)
+  originalEndsAt     DateTime // fim original configurado pelo leiloeiro
+
+  // Estado do pregão (desnormalizado, atualizado sob lock na transação do lance)
+  currentPriceCents Int?
+  bidCount          Int     @default(0)
+  leaderId          String?
+  leader            User?   @relation("LotLeader", fields: [leaderId], references: [id])
+
+  // Âncora da cadeia de auditoria (hash do último lance + assinatura do "head")
+  genesisHash   String
+  headHash      String
+  headSignature String
+
+  cancelledAt     DateTime?
+  cancelReason    String?
+  // Ed25519 de ["CANCEL", lotId, cancelledAt, bidCount, headHash] — cancelamento sem
+  // assinatura válida (ou assinatura sem cancelamento) aparece na auditoria.
+  cancelSignature String?
+  settledAt       DateTime?
+  winnerId        String?
+  winner          User?     @relation("LotWinner", fields: [winnerId], references: [id])
+  finalPriceCents Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bids    Bid[]
+  receipt Receipt?
+  ledger  LedgerEntry[]
+
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([auctioneerId])
+  // Job de liquidação (a cada 2 s): settledAt IS NULL AND cancelledAt IS NULL AND endsAt <= agora.
+  // Só [endsAt] faria a varredura crescer com todo o histórico de lotes encerrados.
+  @@index([settledAt, cancelledAt, endsAt])
+}
+
+// Lance — elo da cadeia de hashes do lote (append-only)
+model Bid {
+  id          String   @id @default(uuid())
+  lotId       String
+  lot         Lot      @relation(fields: [lotId], references: [id])
+  bidderId    String
+  bidder      User     @relation(fields: [bidderId], references: [id])
+  sequence    Int // 1..n dentro do lote
+  amountCents Int
+  bidderAlias String // pseudônimo público por lote (HMAC), nunca dados pessoais
+  createdAt   DateTime
+  prevHash    String
+  hash        String // SHA-256(payload canônico, incluindo prevHash)
+  signature   String // Ed25519(hash) com a chave do servidor
+
+  @@unique([lotId, sequence])
+  @@index([bidderId])
+}
+
+model Receipt {
+  id          String   @id @default(uuid())
+  code        String   @unique // token público do link de compartilhamento
+  lotId       String   @unique
+  lot         Lot      @relation(fields: [lotId], references: [id])
+  winnerId    String
+  winner      User     @relation(fields: [winnerId], references: [id])
+  winnerAlias String
+  amountCents Int
+  bidCount    Int
+  chainHead   String // hash do último lance no momento da liquidação
+  issuedAt    DateTime
+  signature   String // Ed25519 sobre o payload canônico do comprovante
+}

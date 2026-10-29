@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Casa de Leilões — tokens
+ * Claro: papel de catálogo (gesso quente), tinta grafite, um acento: lacre vermelho
+ * (o "ponto vermelho" que as galerias colam ao lado da obra vendida).
+ * Escuro: grafite profundo, mesma hierarquia.
+ */
+:root {
+  --paper: #f5f3ee;
+  --surface: #fbfaf7;
+  --mat: #ebe7df;
+  --ink: #1b1a19;
+  --ink-soft: #3d3b38;
+  --muted: #6c675f;
+  --rule: #dcd6cb;
+  --rule-strong: #bdb5a7;
+  --lacre: #b3261e;
+  --lacre-ink: #ffffff;
+  --lacre-soft: #f6e3e0;
+  --ok: #1d6b45;
+  --ok-soft: #e1efe6;
+  --warn: #8a5a00;
+  --warn-soft: #f6ecd6;
+  --focus: #1d4ed8;
+  color-scheme: light;
+}
+
+.dark {
+  --paper: #18191b;
+  --surface: #202124;
+  --mat: #2a2b2f;
+  --ink: #ecebe7;
+  --ink-soft: #c9c7c1;
+  --muted: #9a968e;
+  --rule: #34353a;
+  --rule-strong: #4a4b51;
+  --lacre: #ef5b4f;
+  --lacre-ink: #1a0b09;
+  --lacre-soft: #3a1f1d;
+  --ok: #5cc98f;
+  --ok-soft: #173326;
+  --warn: #e7b55a;
+  --warn-soft: #362a12;
+  --focus: #8ab4ff;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-mat: var(--mat);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-lacre: var(--lacre);
+  --color-lacre-ink: var(--lacre-ink);
+  --color-lacre-soft: var(--lacre-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-focus: var(--focus);
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--lacre);
+  color: var(--lacre-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Valores e relógio nunca "dançam" */
+.num {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Serifada de exposição com eixo óptico */
+.display {
+  font-family: var(--font-fraunces), ui-serif, Georgia, serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+/* Passe-partout: a obra é sempre apresentada sobre um "mat" */
+.mat {
+  background: var(--mat);
+}
+
+/* Ponto vermelho de galeria */
+.red-dot {
+  display: inline-block;
+  width: 0.62em;
+  height: 0.62em;
+  border-radius: 9999px;
+  background: var(--lacre);
+  flex: none;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lacre) 45%, transparent); }
+  50% { box-shadow: 0 0 0 0.35em color-mix(in srgb, var(--lacre) 0%, transparent); }
+}
+.red-dot.live {
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* Novo lance chegando no histórico / valor atual mudando */
+@keyframes arrive {
+  from { background: var(--lacre-soft); }
+  to { background: transparent; }
+}
+.arrive {
+  animation: arrive 1.6s ease-out;
+}
+
+@keyframes bump {
+  0% { transform: translateY(0.2em); opacity: 0.4; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.bump {
+  animation: bump 0.35s ease-out;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(0.5rem); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+}

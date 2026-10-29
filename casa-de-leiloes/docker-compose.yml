@@ -1,0 +1,72 @@
+# Casa de Leilões — tudo junto:  docker compose up --build
+#   Front:  http://localhost:3000
+#   API:    http://localhost:3001/api   (health: /api/health)
+#   Banco:  localhost:5432 (postgres/postgres, base "leiloes")
+#
+# Variáveis opcionais (arquivo .env na raiz ou no shell): JWT_SECRET, AUDIT_SECRET, SEED, NODE_ENV.
+# SEED=true (padrão) semeia só com o banco vazio; SEED=force recria a demonstração a cada subida.
+#
+# SEGREDOS: este compose é para DEMONSTRAÇÃO LOCAL e sobe sem configuração, com segredos
+# de exemplo PÚBLICOS e NODE_ENV=development (a API só registra um aviso). Qualquer
+# pessoa com este repositório consegue forjar tokens e assinaturas com esses valores.
+# Para um ambiente real, crie um .env com JWT_SECRET e AUDIT_SECRET longos e aleatórios
+# (openssl rand -base64 32) e NODE_ENV=production: aí a API RECUSA subir com segredo
+# ausente, curto ou de exemplo.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: leiloes
+    ports:
+      # Só na interface local: com senha postgres/postgres, não publique o banco na rede.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d leiloes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/leiloes?schema=public
+      PORT: "3001"
+      # Demo local: valores públicos + development (ver aviso no topo). Produção: defina no .env.
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-troque-este-segredo-jwt}
+      AUDIT_SECRET: ${AUDIT_SECRET:-troque-este-segredo-de-auditoria}
+      CORS_ORIGIN: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      ARTWORKS_API_URL: https://api.artic.edu/api/v1
+      SEED: ${SEED:-true}
+    ports:
+      # Só na interface local: em demo o JWT_SECRET é público (qualquer um na rede forjaria tokens).
+      - "127.0.0.1:3001:3001"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Lida pelo NAVEGADOR, por isso aponta para a porta publicada no host.
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  db-data:

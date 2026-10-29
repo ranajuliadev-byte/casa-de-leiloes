@@ -1,0 +1,49 @@
+# Blueprint do Render: banco PostgreSQL + API (NestJS).
+# O front-end vai na Vercel (root directory: frontend) — ver README.md → Deploy.
+databases:
+  - name: casa-de-leiloes-db
+    plan: free
+    databaseName: leiloes
+    user: leiloes
+
+services:
+  - type: web
+    name: casa-de-leiloes-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    # --include=dev: com NODE_ENV=production o npm pularia as devDependencies (nest-cli,
+    # typescript, ts-node do seed, dotenv), que o build e a subida usam.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    # Migrations a cada deploy; seed só se o banco estiver vazio (não apaga dados existentes).
+    startCommand: npx prisma migrate deploy && (npm run db:seed -- --if-empty || echo "seed ignorado") && node dist/main.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Liga a trava que recusa segredos ausentes, curtos ou de exemplo.
+      - key: NODE_ENV
+        value: production
+      # Deploy de DEMONSTRAÇÃO: libera o seed com as contas de senha pública (leilao123).
+      # Num ambiente real, remova esta variável.
+      - key: ALLOW_DEMO_SEED
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: casa-de-leiloes-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      # Gera a chave Ed25519 da auditoria e o HMAC dos pseudônimos.
+      # NÃO troque depois de ter lances: as assinaturas antigas deixariam de validar.
+      - key: AUDIT_SECRET
+        generateValue: true
+      - key: TS_NODE_TRANSPILE_ONLY
+        value: "true"
+      # URL do front na Vercel (ex.: https://casa-de-leiloes.vercel.app) — preencher no painel.
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ARTWORKS_API_URL
+        value: https://api.artic.edu/api/v1
