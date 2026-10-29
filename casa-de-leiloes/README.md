@@ -235,6 +235,7 @@ Build de produção: `cd backend && npm run build && npm run start:prod` (aplica
 | Variável | Obrigatória | Padrão / exemplo | Descrição |
 |---|---|---|---|
 | `DATABASE_URL` | sim | `postgresql://postgres:postgres@localhost:5432/leiloes?schema=public` | Conexão com o PostgreSQL. |
+| `DATABASE_CA_CERT` | não | — | Certificado PEM da CA do banco, para validar o TLS quando ela não é pública (ex.: Supabase). |
 | `PORT` | não | `3001` | Porta HTTP e WebSocket da API. |
 | `NODE_ENV` | não | `development` | Com `production`, a API **recusa subir** se `JWT_SECRET` ou `AUDIT_SECRET` estiverem ausentes, tiverem menos de 16 caracteres ou forem um dos valores de exemplo públicos deste repositório. Fora de produção ela usa um padrão de desenvolvimento e registra um aviso. A imagem Docker da API já define `production`; o `docker-compose.yml` sobrescreve para `development` (ver Opção A). |
 | `JWT_SECRET` | sim (produção) | (≥ 16 caracteres, aleatório) | Assina os tokens de acesso (validade de 7 dias). |
@@ -574,6 +575,7 @@ O Render free bloqueia SMTP nas portas 25, 465 e 587. O Brevo aceita a porta **2
    - `JWT_SECRET` e `AUDIT_SECRET` gerados automaticamente; `SMTP_HOST`/`SMTP_PORT` já apontam para o Brevo.
 3. Preencha no painel as variáveis pedidas:
    - `DATABASE_URL`: a URI do Session pooler do Supabase;
+   - `DATABASE_CA_CERT`: o conteúdo do certificado do Supabase (*Project Settings → Database → SSL Configuration → Download certificate*; abra o `.crt` no Bloco de Notas e cole tudo, de `-----BEGIN CERTIFICATE-----` a `-----END CERTIFICATE-----`);
    - `SMTP_USER` / `SMTP_PASS`: login e SMTP key do Brevo;
    - `MAIL_FROM`: `Casa de Leilões <seu-remetente-verificado@...>`;
    - `CORS_ORIGIN` e `FRONTEND_URL`: a URL da Vercel (por exemplo, `https://casa-de-leiloes.vercel.app`). Se ainda não tiver, preencha depois do deploy do front e faça um redeploy.

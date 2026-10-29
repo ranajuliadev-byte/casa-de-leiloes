@@ -18,6 +18,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { Prisma, PrismaClient, Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { pgConfig } from '../src/prisma/pg-config';
 import {
   bidderAlias,
   genesisHash,
@@ -565,7 +566,7 @@ async function main() {
     console.log('Seed ignorado: NODE_ENV=production sem ALLOW_DEMO_SEED=true (contas de demonstração têm senha pública).');
     return;
   }
-  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL as string }) });
+  const prisma = new PrismaClient({ adapter: new PrismaPg(pgConfig()) });
   try {
     if (ifEmpty && (await prisma.user.count()) > 0) {
       console.log('Seed ignorado: o banco já tem usuários (--if-empty).');

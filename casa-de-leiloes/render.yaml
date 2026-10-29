@@ -28,6 +28,10 @@ services:
       # Não use o "Transaction pooler" (6543): o `prisma migrate deploy` precisa de sessão.
       - key: DATABASE_URL
         sync: false
+      # Certificado da CA do Supabase (Project Settings → Database → SSL Configuration →
+      # Download certificate), com o conteúdo PEM colado inteiro. Valida o TLS do banco.
+      - key: DATABASE_CA_CERT
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       # Gera a chave Ed25519 da auditoria e o HMAC dos pseudônimos.
