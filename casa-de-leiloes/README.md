@@ -114,7 +114,7 @@ flowchart LR
 
   DB[(PostgreSQL)]
   AIC[(API Art Institute<br/>of Chicago)]
-  CDN[(CDN IIIF do AIC<br/>imagens)]
+  CDN[(Wikimedia Commons<br/>imagens)]
 
   UI -- REST --> API
   UI <-- "lot:state · lot:bid · user:*" --> RT
@@ -155,7 +155,7 @@ flowchart LR
 │   └── Dockerfile
 ├── docs/CONTRATO.md         contrato REST/WebSocket entre front e back
 ├── docker-compose.yml
-└── render.yaml              Blueprint de deploy da API + banco (Render)
+└── render.yaml              Blueprint de deploy da API (Render)
 ```
 
 ### Modelo de dados (resumo)
@@ -246,8 +246,14 @@ Build de produção: `cd backend && npm run build && npm run start:prod` (aplica
 | `TEST_DATABASE_URL` | não | `postgresql://postgres:postgres@localhost:5432/leiloes_test?schema=public` | Banco usado por `npm test`. |
 | `SEED` | não (só Docker) | `true` | `true`: semeia se o banco estiver vazio. `force`: recria a cada subida. Outro valor: não semeia. |
 | `ALLOW_DEMO_SEED` | não | — | Com `NODE_ENV=production`, o seed só roda se for `true` (as contas de demonstração têm senha pública). O `render.yaml` define `true` por ser um deploy de demonstração. |
-| `AUTH_RATE_LIMIT` | não | `10` | Máximo de logins e de cadastros por minuto por IP (cada rota conta separado). O limite global das outras rotas é 600/min. |
+| `AUTH_RATE_LIMIT` | não | `10` | Máximo por minuto por IP em cada rota pública de autenticação: login, cadastro, pedido e redefinição de senha (cada rota conta separado). O limite global das outras rotas é 600/min. |
 | `AUDIT_RATE_LIMIT` | não | `60` | Máximo de chamadas por minuto por IP a `GET /api/audit/lots/:id` e a `GET /api/receipts/:code` (cada rota conta separado). |
+| `LEDGER_CHECK_ON_BOOT` | não | `true` | Roda a verificação completa dos extratos (hash de cada lançamento) logo ao subir; depois ela roda a cada 1 min. Os testes usam `false`. |
+| `ARTWORK_SEARCH_RATE_LIMIT` | não | `30` | Máximo de buscas de obras por minuto por IP (cada busca vai à API externa). |
+| `SMTP_HOST` | não | — | Servidor SMTP para o e-mail de recuperação de senha. Sem ele: fora de produção, o link aparece no log da API; em produção, o e-mail não é enviado (só um aviso no log). |
+| `SMTP_PORT` / `SMTP_SECURE` | não | `587` / `false` | Porta do SMTP e se usa TLS direto (`true`, normalmente porta 465). |
+| `SMTP_USER` / `SMTP_PASS` | não | — | Credenciais do SMTP. |
+| `MAIL_FROM` | não | `Casa de Leilões <no-reply@casadeleiloes.dev>` | Remetente dos e-mails. |
 
 ### Front (`frontend/.env.local`, modelo em `frontend/.env.example`)
 
@@ -264,7 +270,7 @@ Senha de **todos** os usuários: **`leilao123`**
 | Papel | E-mail | Situação inicial |
 |---|---|---|
 | Leiloeiro | `leiloeiro@leilao.dev` | Dono de todos os lotes; já recebeu R$ 4.200,00 de um arremate |
-| Licitante | `ana@leilao.dev` | Depositou R$ 50.000,00; lidera um lote e já arrematou outro |
+| Licitante **e** leiloeira | `ana@leilao.dev` | Depositou R$ 50.000,00; lidera um lote e já arrematou outro. A conta tem os dois perfis: no login, escolha "Comprador" ou "Leiloeiro" (ou troque pelo botão no topo) |
 | Licitante | `bruno@leilao.dev` | Depositou R$ 50.000,00; lidera um lote |
 
 Lotes criados pelo seed (horários **relativos ao momento em que o seed roda**):
@@ -411,7 +417,7 @@ A API do Art Institute of Chicago é pública, sem chave, com limite de requisi�
 | **Cache em memória** | Resultados de busca por 10 min (até 500 consultas). |
 | **Cache no banco** | Toda obra vista é gravada na tabela `Artwork`. Se a API cair, a busca responde **200** com resultados do banco (`source: 'cache'`, `degraded: true`) e o painel mostra um aviso. **Nunca 500.** |
 | **Snapshot no lote** | Ao criar o lote, título, imagem e atributos são **copiados** para o próprio lote. Vitrine, sala, auditoria e comprovante **não dependem mais** da API externa. |
-| **Imagens** | Servidas pelo CDN IIIF do AIC. Se a imagem falhar, o front mostra um placeholder e a página segue funcionando. |
+| **Imagens** | Pelo Wikimedia Commons: o Wikidata liga cada obra do AIC (P4610) à sua imagem (P18). O CDN IIIF do AIC passou a bloquear `<img>` com desafio anti-bot do Cloudflare; ele fica só como reserva para obras sem correspondência no Wikidata. Se a imagem falhar, o front mostra um placeholder e a página segue funcionando. |
 
 Criar um lote com uma obra que **não está no cache** enquanto a API está fora responde `503 EXTERNAL_API_UNAVAILABLE` com mensagem clara. Obras já vistas continuam disponíveis.
 
@@ -541,18 +547,41 @@ O relógio da aplicação é injetável (`Clock`), então os testes "avançam o 
 
 ## 13. Deploy
 
-### API e banco: Render (Blueprint)
+Tudo no plano gratuito: **Supabase** (banco), **Render** (API), **Vercel** (front), **Brevo** (e-mail) e **UptimeRobot** (mantém a API acordada).
+
+### Banco: Supabase
+
+O PostgreSQL free do Render expira em 30 dias, e o Neon free (100 h de computação/mês) não aguenta o job de liquidação consultando o banco a cada 2 s. O Supabase free é uma instância sempre ligada (500 MB), que só pausa após 7 dias **sem** atividade.
+
+1. Em [supabase.com](https://supabase.com): **New project** (anote a senha do banco).
+2. **Connect** → **Session pooler** → copie a URI (`postgresql://postgres.<ref>:<senha>@aws-0-<região>.pooler.supabase.com:5432/postgres`).
+   - Não use a *Direct connection* (só IPv6, o Render não alcança) nem o *Transaction pooler* (porta 6543, quebra o `prisma migrate deploy`).
+
+### E-mail: Brevo
+
+O Render free bloqueia SMTP nas portas 25, 465 e 587. O Brevo aceita a porta **2525** e envia para qualquer destinatário sem domínio próprio (300 e-mails/dia).
+
+1. Em [brevo.com](https://www.brevo.com): crie a conta e, em **Senders**, verifique o e-mail remetente (pode ser um Gmail).
+2. **SMTP & API** → **SMTP**: anote o *login* e gere uma *SMTP key*.
+
+### API: Render (Blueprint)
 
 1. Faça um fork ou push deste repositório no GitHub.
-2. No Render: **New → Blueprint** e selecione o repositório. O `render.yaml` cria:
-   - um **PostgreSQL** (free) e
-   - o web service **casa-de-leiloes-api** (`rootDir: backend`):
-     - build: `npm ci && npx prisma generate && npm run build`
-     - start: `npx prisma migrate deploy && npm run db:seed -- --if-empty && node dist/main.js` (seed só se o banco estiver vazio)
-     - health check: `/api/health`
-     - `JWT_SECRET` e `AUDIT_SECRET` gerados automaticamente; `DATABASE_URL` ligado ao banco.
-3. Depois do deploy do front, preencha no painel do Render `CORS_ORIGIN` e `FRONTEND_URL` com a URL da Vercel (por exemplo, `https://casa-de-leiloes.vercel.app`) e faça um redeploy.
+2. No Render: **New → Blueprint** e selecione o repositório. O `render.yaml` cria o web service **casa-de-leiloes-api** (`rootDir: backend`):
+   - build: `npm ci --include=dev && npx prisma generate && npm run build`
+   - start: `npx prisma migrate deploy && npm run db:seed -- --if-empty && node dist/main.js` (seed só se o banco estiver vazio)
+   - health check: `/api/health`
+   - `JWT_SECRET` e `AUDIT_SECRET` gerados automaticamente; `SMTP_HOST`/`SMTP_PORT` já apontam para o Brevo.
+3. Preencha no painel as variáveis pedidas:
+   - `DATABASE_URL`: a URI do Session pooler do Supabase;
+   - `SMTP_USER` / `SMTP_PASS`: login e SMTP key do Brevo;
+   - `MAIL_FROM`: `Casa de Leilões <seu-remetente-verificado@...>`;
+   - `CORS_ORIGIN` e `FRONTEND_URL`: a URL da Vercel (por exemplo, `https://casa-de-leiloes.vercel.app`). Se ainda não tiver, preencha depois do deploy do front e faça um redeploy.
 4. Para recriar a demonstração em produção: Shell do serviço → `npm run db:seed`.
+
+### Manter a API acordada: UptimeRobot
+
+Em [uptimerobot.com](https://uptimerobot.com): **New monitor** → HTTP(s) → `https://<sua-api>.onrender.com/api/health` → intervalo de **5 min**. Assim a API não dorme e a liquidação roda no horário. As 750 h/mês do Render free cobrem um serviço ligado 24/7.
 
 ### Front: Vercel
 
@@ -562,9 +591,9 @@ O relógio da aplicação é injetável (`Clock`), então os testes "avançam o 
 
 ### Observações do free tier
 
-- A API no Render free **"dorma" após ~15 min sem acesso**. O primeiro acesso depois disso leva de 30 a 60 s. Se a vitrine abrir vazia ou com erro, aguarde e recarregue.
+- Sem o monitor do UptimeRobot, a API no Render free **dorme após ~15 min sem acesso**. O primeiro acesso depois disso leva de 30 a 60 s. Se a vitrine abrir vazia ou com erro, aguarde e recarregue.
 - Enquanto a API dorme, o job de liquidação não roda: lotes que terminaram nesse intervalo são **liquidados assim que ela acorda** (em até ~2 s), com o horário real da liquidação.
-- O PostgreSQL free do Render expira depois de um período. Se isso acontecer, recrie o banco pelo Blueprint e o seed roda de novo.
+- Supabase free: 500 MB de banco, de sobra para a demonstração. O projeto só pausa após 7 dias sem nenhuma consulta. Se pausar, reative-o no painel do Supabase.
 
 ---
 

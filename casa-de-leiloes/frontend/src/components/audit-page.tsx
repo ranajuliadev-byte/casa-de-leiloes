@@ -212,9 +212,9 @@ export function AuditPage({ lotId }: { lotId: string }) {
     ['Último elo assinado', s.headOk],
     ['Quantidade de lances', s.countOk],
     ['Preço final coerente', s.priceOk],
-    ...(s.timingOk === undefined ? [] : [['Horários e prorrogações', s.timingOk] as [string, boolean]]),
-    ...(s.cancelOk === undefined ? [] : [['Cancelamento assinado', s.cancelOk] as [string, boolean]]),
-    ...(s.ledgerOk === undefined ? [] : [['Extrato das carteiras', s.ledgerOk] as [string, boolean]]),
+    ['Horários e prorrogações', s.timingOk],
+    ['Cancelamento assinado', s.cancelOk],
+    ['Extrato das carteiras', s.ledgerOk],
   ];
 
   return (
@@ -265,6 +265,11 @@ export function AuditPage({ lotId }: { lotId: string }) {
           </li>
         ))}
       </ul>
+      <p className="mt-3 text-xs text-muted">
+        {report.verification.ledgerCheckedAt
+          ? `Verificação completa dos extratos (hash de cada lançamento): ${formatDateShort(report.verification.ledgerCheckedAt)}.`
+          : 'A verificação completa dos extratos ainda não rodou desde que o servidor subiu: por enquanto vale a checagem resumida.'}
+      </p>
 
       <section aria-labelledby="cadeia" className="mt-12">
         <h2 id="cadeia" className="display border-b border-ink pb-3 text-2xl">

@@ -7,7 +7,10 @@ export interface UserView {
   id: string;
   name: string;
   email: string;
+  /** perfil ATIVO da sessão */
   role: Role;
+  /** perfis habilitados na conta (mesmo e-mail pode ser leiloeiro e comprador) */
+  roles: Role[];
 }
 
 export interface WalletView {
@@ -155,8 +158,11 @@ export interface AuditReport {
     headHash: string;
     headSignature: string;
     genesisHash: string;
-    /** Assinatura Ed25519 do cancelamento (null se o lote não foi cancelado). Opcional até o back publicar o campo. */
-    cancelSignature?: string | null;
+    cancelledAt: string | null;
+    /** Assinatura Ed25519 de `cancelPayload` (null se o lote não foi cancelado). */
+    cancelSignature: string | null;
+    /** Texto exato assinado no cancelamento: JSON ["CANCEL", lotId, cancelledAt, bidCount, headHash]. */
+    cancelPayload: string | null;
   };
   genesisPayload: string;
   bids: AuditBid[];
@@ -175,10 +181,12 @@ export interface AuditReport {
       signaturesOk: boolean;
       countOk: boolean;
       priceOk: boolean;
-      timingOk?: boolean; // horários dos lances e fim (anti-sniping) coerentes
-      cancelOk?: boolean; // cancelamento assinado (ou ausência dele) coerente
-      ledgerOk?: boolean; // extrato das carteiras bate com a cadeia
+      timingOk: boolean; // horários dos lances e fim (anti-sniping) coerentes
+      cancelOk: boolean; // cancelamento assinado (ou ausência dele) coerente
+      ledgerOk: boolean; // extrato das carteiras bate com a cadeia
     };
+    /** Última verificação COMPLETA dos extratos (job do servidor); null = nenhuma desde que a API subiu. */
+    ledgerCheckedAt: string | null;
   };
   publicKey: { algorithm: 'Ed25519'; publicKeyRawBase64: string };
 }

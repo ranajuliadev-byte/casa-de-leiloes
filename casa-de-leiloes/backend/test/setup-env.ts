@@ -7,3 +7,5 @@ process.env.AUDIT_SECRET = process.env.AUDIT_SECRET ?? 'segredo-de-auditoria-dos
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'segredo-jwt-dos-testes';
 // Os testes criam muitos usuários pelo mesmo IP; o limite de login/cadastro é testado à parte.
 process.env.AUTH_RATE_LIMIT = process.env.AUTH_RATE_LIMIT ?? '1000';
+// A verificação completa do extrato ao subir disputaria locks com o TRUNCATE de resetDb.
+process.env.LEDGER_CHECK_ON_BOOT = 'false';

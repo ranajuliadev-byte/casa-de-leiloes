@@ -18,3 +18,13 @@ export const ARTWORK_SEARCH_RATE_LIMIT = { ttl: MINUTE, limit: () => Number(proc
 
 /** Auditoria e comprovante: públicos e reverificam a cadeia e os extratos a cada chamada. */
 export const AUDIT_RATE_LIMIT = { ttl: MINUTE, limit: () => Number(process.env.AUDIT_RATE_LIMIT) || 60 };
+
+/**
+ * Login e cadastro dividem UM contador por IP: com e-mail existente, o cadastro também
+ * confere a senha (para habilitar o outro perfil), então contadores separados dobrariam
+ * a taxa de tentativas de senha.
+ */
+export const PASSWORD_ATTEMPT_RATE_LIMIT = {
+  ...AUTH_RATE_LIMIT,
+  generateKey: (_ctx: unknown, tracker: string, throttler: string) => `password-attempt:${throttler}:${tracker}`,
+};

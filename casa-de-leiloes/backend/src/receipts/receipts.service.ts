@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { receiptPayload, verifyText } from '../common/crypto/audit-crypto';
 import { AppError } from '../common/errors';
 import { LotAttributes } from '../common/lot-view';
+import { frontendUrl } from '../common/urls';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -17,10 +18,6 @@ export interface ReceiptView {
   signature: string;
   valid: boolean;
   auditUrl: string;
-}
-
-export function frontendUrl(): string {
-  return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
 export function receiptUrl(code: string): string {

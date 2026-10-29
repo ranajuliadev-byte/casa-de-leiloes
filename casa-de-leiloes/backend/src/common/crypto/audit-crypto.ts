@@ -155,10 +155,10 @@ export function signText(text: string): string {
  * determinístico para (texto, assinatura, chave), então adulterar texto ou assinatura
  * gera outra chave de cache e é verificado de verdade. Zerado quando a chave muda.
  *
- * Limite de escala: a auditoria verifica o head de TODAS as carteiras a cada chamada.
- * Com mais carteiras que VERIFY_CACHE_MAX, a varredura cíclica com despejo FIFO erra
- * sempre e o cache só custa. Nessa escala, a checagem global deve virar job periódico
- * (ver README → limitações da auditoria) em vez de aumentar este número.
+ * Limite de escala: a checagem AGREGADA de cada auditoria verifica o head de todas as
+ * carteiras. Com mais carteiras que VERIFY_CACHE_MAX, a varredura cíclica com despejo
+ * FIFO erra sempre e o cache só custa; nessa escala, a checagem agregada também deve
+ * ir para o job periódico (LedgerIntegrityService) em vez de aumentar este número.
  */
 const verifyCache = new Map<string, boolean>();
 const VERIFY_CACHE_MAX = 50_000;

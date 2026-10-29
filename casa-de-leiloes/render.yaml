@@ -1,10 +1,6 @@
-# Blueprint do Render: banco PostgreSQL + API (NestJS).
-# O front-end vai na Vercel (root directory: frontend) — ver README.md → Deploy.
-databases:
-  - name: casa-de-leiloes-db
-    plan: free
-    databaseName: leiloes
-    user: leiloes
+# Blueprint do Render: API (NestJS).
+# O front-end vai na Vercel (root directory: frontend) e o banco no Supabase — ver README.md → Deploy.
+# O banco não é criado aqui porque o PostgreSQL free do Render expira em 30 dias.
 
 services:
   - type: web
@@ -28,10 +24,10 @@ services:
       # Num ambiente real, remova esta variável.
       - key: ALLOW_DEMO_SEED
         value: "true"
+      # Connection string do Supabase, modo "Session pooler" (porta 5432, IPv4) — preencher no painel.
+      # Não use o "Transaction pooler" (6543): o `prisma migrate deploy` precisa de sessão.
       - key: DATABASE_URL
-        fromDatabase:
-          name: casa-de-leiloes-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       # Gera a chave Ed25519 da auditoria e o HMAC dos pseudônimos.
@@ -44,6 +40,20 @@ services:
       - key: CORS_ORIGIN
         sync: false
       - key: FRONTEND_URL
+        sync: false
+      # E-mail de recuperação de senha via Brevo. Sem SMTP_HOST, nada é enviado e a API
+      # registra um erro na subida. O Render free bloqueia as portas 25/465/587, por isso a 2525.
+      # SMTP_USER/SMTP_PASS: login e chave SMTP do Brevo; MAIL_FROM: remetente verificado
+      # no Brevo — preencher no painel.
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "2525"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
         sync: false
       - key: ARTWORKS_API_URL
         value: https://api.artic.edu/api/v1

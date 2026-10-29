@@ -4,6 +4,7 @@ import { AppError } from '../../src/common/errors';
 import { AicArtwork, AicClient, AicError, AicSearchResult } from '../../src/artworks/aic.client';
 import { ArtworksService, CACHE_TTL_MS } from '../../src/artworks/artworks.service';
 import { CircuitBreaker } from '../../src/artworks/circuit-breaker';
+import { WikimediaImages } from '../../src/artworks/wikimedia.client';
 
 const art = (id: number, extra: Partial<AicArtwork> = {}): AicArtwork => ({
   id,
@@ -82,6 +83,36 @@ describe('ArtworksService.search (API externa + fallback)', () => {
       thumbUrl: 'https://www.artic.edu/iiif/2/img-1/full/200,/0/default.jpg',
     });
     expect(prisma.artwork.upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('imagem do Wikimedia Commons quando o Wikidata tem a obra; IIIF do AIC quando não tem', async () => {
+    const { prisma, aic, clock } = setup();
+    const images = {
+      filesFor: jest.fn(async () => new Map([[1, 'http://commons.wikimedia.org/wiki/Special:FilePath/Obra%201.jpg']])),
+    } as unknown as WikimediaImages;
+    const service = new ArtworksService(prisma as any, aic, clock, images);
+    aic.search.mockResolvedValue(page([art(1), art(3)]));
+
+    const r = await service.search('monet', 1);
+
+    expect(images.filesFor).toHaveBeenCalledWith([1, 3]);
+    expect(r.items[0].imageUrl).toBe('https://commons.wikimedia.org/wiki/Special:FilePath/Obra%201.jpg?width=843');
+    expect(r.items[0].thumbUrl).toBe('https://commons.wikimedia.org/wiki/Special:FilePath/Obra%201.jpg?width=200');
+    expect(r.items[1].imageUrl).toBe('https://www.artic.edu/iiif/2/img-3/full/843,/0/default.jpg');
+  });
+
+  it('Wikidata sem resposta: mantém a imagem do Commons já gravada (não troca pela do IIIF)', async () => {
+    const { prisma, aic, clock } = setup();
+    const commons = 'https://commons.wikimedia.org/wiki/Special:FilePath/Obra%201.jpg?width=843';
+    prisma.artwork.findMany.mockResolvedValueOnce([{ id: 'aic:1', imageUrl: commons, thumbUrl: commons.replace('843', '200') }] as any);
+    const images = { filesFor: jest.fn(async () => new Map()) } as unknown as WikimediaImages;
+    const service = new ArtworksService(prisma as any, aic, clock, images);
+    aic.search.mockResolvedValue(page([art(1)]));
+
+    const r = await service.search('monet', 1);
+
+    expect(r.items[0].imageUrl).toBe(commons);
+    expect(prisma.artwork.upsert.mock.calls[0][0].update.imageUrl).toBe(commons);
   });
 
   it('cache em memória por consulta (TTL 10 min)', async () => {

@@ -155,6 +155,10 @@ export class SettlementService {
 
     const price = lot.currentPriceCents;
     const winnerId = lot.leaderId;
+    // Uma conta pode ter os dois perfis, mas o lance no próprio lote é recusado
+    // (CANNOT_BID_OWN_LOT). Se mesmo assim existir (seed/script/banco), a mesma carteira
+    // seria debitada e creditada com o mesmo nº de lançamento: falha clara, não retry.
+    if (winnerId === lot.auctioneerId) throw new Error(`Lote ${lot.id}: vencedor é o próprio leiloeiro; liquidação recusada.`);
     const wallets = await lockWallets(tx, [winnerId, lot.auctioneerId]);
     const winnerW = wallets.get(winnerId);
     const auctioneerW = wallets.get(lot.auctioneerId);

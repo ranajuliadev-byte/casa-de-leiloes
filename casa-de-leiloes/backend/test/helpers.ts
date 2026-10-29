@@ -98,7 +98,7 @@ export async function createUser(
   const n = name ?? `${role === 'AUCTIONEER' ? 'Leiloeiro' : 'Licitante'} ${userSeq}`;
   const email = `u${userSeq}-${randomUUID().slice(0, 8)}@teste.dev`;
   const user = await ctx.prisma.user.create({
-    data: { name: n, email, passwordHash: 'x', role, wallet: { create: {} } },
+    data: { name: n, email, passwordHash: 'x', roles: [role], wallet: { create: {} } },
     include: { wallet: true },
   });
   if (balanceCents > 0) {

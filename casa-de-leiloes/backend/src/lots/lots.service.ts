@@ -251,7 +251,8 @@ export class LotsService {
       isLeader,
       myHighestBidCents: idx >= 0 ? ranking[idx]._max.amountCents ?? null : null,
       position: idx >= 0 ? idx + 1 : null,
-      canBid: phase === 'LIVE' && !isLeader,
+      // Quem também é o leiloeiro deste lote (perfil de comprador ativo) não pode dar lance nele.
+      canBid: phase === 'LIVE' && !isLeader && viewer.id !== lot.auctioneerId,
       isOwner: false,
     };
   }

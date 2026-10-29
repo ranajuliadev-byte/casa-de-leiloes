@@ -144,6 +144,15 @@ describe('Endurecimento — carteira, liquidação, cadastros e rate limit', () 
   });
 
   describe('texto que o Postgres altera ao gravar', () => {
+    it('NUL em query, corpo ou parâmetro → 400 (não 500)', async () => {
+      // rota de lances (não a da vitrine: o teste do limite global conta as requisições dela)
+      const q = await request(url).get('/api/lots/00000000-0000-4000-8000-000000000000/bids?cursor=%00').expect(400);
+      expect(q.body.code).toBe('VALIDATION_ERROR');
+      const body = await request(url).post('/api/auth/forgot-password').send({ email: 'a\u0000@b.dev' }).expect(400);
+      expect(body.body.code).toBe('VALIDATION_ERROR');
+      await request(url).get('/api/lots/abc%00def').expect(400);
+    });
+
     it('descrição com surrogate isolado não faz o lote nascer "adulterado"', async () => {
       const auc = await createUser(ctx(), 'AUCTIONEER');
       await prisma.artwork.upsert({
@@ -188,15 +197,22 @@ describe('Endurecimento — carteira, liquidação, cadastros e rate limit', () 
       await request(url).get('/api/health').expect(200);
     }, 60_000);
 
-    it('login tem limite próprio (AUTH_RATE_LIMIT), bem abaixo do global', async () => {
+    it('login e cadastro dividem um limite próprio de tentativas de senha (AUTH_RATE_LIMIT)', async () => {
       const previous = process.env.AUTH_RATE_LIMIT;
       process.env.AUTH_RATE_LIMIT = '5';
       try {
         const login = () => request(url).post('/api/auth/login').send({ email: 'ninguem@teste.dev', password: 'senha-errada' });
-        for (let i = 0; i < 5; i++) expect((await login()).status).toBe(401);
-        const blocked = await login();
+        // O contador também já inclui os cadastros deste arquivo (mesma janela de 1 min):
+        // em até 5 tentativas a partir daqui, o limite tem de bloquear.
+        let blocked = await login();
+        for (let i = 0; i < 5 && blocked.status !== 429; i++) blocked = await login();
         expect(blocked.status).toBe(429);
         expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+        // ...e o cadastro (que também confere senha) cai no MESMO contador.
+        const reg = await request(url)
+          .post('/api/auth/register')
+          .send({ name: 'Pessoa', email: 'limite@teste.dev', password: 'senha123', role: 'BIDDER' });
+        expect(reg.status).toBe(429);
       } finally {
         process.env.AUTH_RATE_LIMIT = previous;
       }

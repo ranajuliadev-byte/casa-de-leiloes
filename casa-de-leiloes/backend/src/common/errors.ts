@@ -20,7 +20,8 @@ export const ErrorCodes = {
   LOT_NOT_STARTED: { status: 409, message: 'Este lote ainda não foi iniciado.' },
   LOT_ENDED: { status: 409, message: 'Este lote já foi encerrado.' },
   LOT_CANCELLED: { status: 409, message: 'Este lote foi cancelado.' },
-  AUCTIONEER_CANNOT_BID: { status: 403, message: 'Leiloeiros não podem dar lances.' },
+  AUCTIONEER_CANNOT_BID: { status: 403, message: 'Com o perfil de leiloeiro não dá para dar lances. Entre como comprador.' },
+  CANNOT_BID_OWN_LOT: { status: 403, message: 'Você não pode dar lances nos seus próprios lotes.' },
   INVALID_AMOUNT: { status: 400, message: 'Valor inválido.' },
   // Lotes
   LOT_NOT_FOUND: { status: 404, message: 'Lote não encontrado.' },
@@ -30,7 +31,11 @@ export const ErrorCodes = {
   ARTWORK_NOT_FOUND: { status: 404, message: 'Obra não encontrada na API nem no cache local.' },
   EXTERNAL_API_UNAVAILABLE: { status: 503, message: 'A API de obras está indisponível no momento. Mostrando apenas resultados em cache.' },
   // Auth / usuários
-  EMAIL_TAKEN: { status: 409, message: 'Este e-mail já está cadastrado.' },
+  EMAIL_TAKEN: { status: 409, message: 'Este e-mail já está cadastrado. Entre com ele, ou use a mesma senha para habilitar o outro perfil.' },
+  ROLE_ALREADY_ENABLED: { status: 409, message: 'Esta conta já tem este perfil. Entre com ele.' },
+  ROLE_NOT_ENABLED: { status: 403, message: 'Esta conta não tem este perfil. Cadastre-o com o mesmo e-mail e senha.' },
+  ROLE_ALREADY_ACTIVE: { status: 409, message: 'Você já está usando este perfil.' },
+  INVALID_RESET_TOKEN: { status: 400, message: 'Link de redefinição inválido ou expirado. Peça um novo.' },
   INVALID_CREDENTIALS: { status: 401, message: 'E-mail ou senha inválidos.' },
   UNAUTHORIZED: { status: 401, message: 'Faça login para continuar.' },
   FORBIDDEN_ROLE: { status: 403, message: 'Seu perfil não tem permissão para esta ação.' },
@@ -101,7 +106,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // Erros 4xx do body-parser que o Nest não converte (413 corpo grande, 415 charset):
     // são culpa do cliente, não falha interna — devolve o status certo e não loga stack.
-    const clientStatus = (exception as { status?: unknown; statusCode?: unknown } | null)?.status ?? (exception as any)?.statusCode;
+    // Só erros http-errors (body-parser) marcados como expostos: outro objeto com `status`
+    // (ex.: AicError) que escapar continua sendo 500 com log.
+    const httpErr = exception as { status?: unknown; expose?: unknown } | null;
+    const clientStatus = httpErr?.expose === true ? httpErr.status : undefined;
     if (typeof clientStatus === 'number' && clientStatus >= 400 && clientStatus < 500) {
       return res.status(clientStatus).json({
         statusCode: clientStatus,

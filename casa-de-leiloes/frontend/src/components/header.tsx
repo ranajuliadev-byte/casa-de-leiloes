@@ -5,10 +5,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
-import { LogOut, Menu, Moon, Sun, X } from 'lucide-react';
+import { ArrowLeftRight, LogOut, Menu, Moon, Sun, X } from 'lucide-react';
 import { useAuth } from './auth-provider';
 import { formatBRL } from '@/lib/format';
 import { useSocketStatus } from '@/lib/socket';
+import { useRoleSwitch } from './use-role-switch';
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -44,6 +45,7 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const roleSwitch = useRoleSwitch();
 
   useEffect(() => setOpen(false), [pathname]);
 
@@ -110,6 +112,18 @@ export function Header() {
           )}
           {user && (
             <div className="hidden items-center gap-2 md:flex">
+              {roleSwitch && (
+                <button
+                  type="button"
+                  onClick={() => void roleSwitch.run()}
+                  disabled={roleSwitch.busy}
+                  className="flex items-center gap-1.5 border border-rule-strong px-2.5 py-1.5 text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink disabled:opacity-60"
+                  title="Sua conta tem os dois perfis"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+                  {roleSwitch.label}
+                </button>
+              )}
               <span className="max-w-[12ch] truncate text-sm text-muted" title={user.name}>
                 {user.name.split(' ')[0]}
               </span>
@@ -154,6 +168,13 @@ export function Header() {
                   </Link>
                 </li>
               </>
+            )}
+            {roleSwitch && (
+              <li>
+                <button type="button" onClick={() => void roleSwitch.run()} disabled={roleSwitch.busy} className="flex items-center gap-2 py-3 text-base">
+                  <ArrowLeftRight className="h-4 w-4" aria-hidden /> {roleSwitch.label}
+                </button>
+              </li>
             )}
             {user && (
               <li className="flex items-center justify-between border-t border-rule py-3">

@@ -39,7 +39,7 @@ describe('tx-utils — retry defensivo', () => {
   it('reconhece violação de unicidade (P2002) como repetível', async () => {
     const a = await createUser(ctx, 'BIDDER', 0);
     const err = await ctx.prisma.user
-      .create({ data: { name: 'x', email: a.email, passwordHash: 'x', role: 'BIDDER' } })
+      .create({ data: { name: 'x', email: a.email, passwordHash: 'x', roles: ['BIDDER'] } })
       .catch((e) => e);
     expect(isRetryableTxError(err)).toBe(true);
   });

@@ -26,6 +26,8 @@ export interface BrowserReport {
   ed25519Supported: boolean;
   genesisOk: boolean;
   headOk: boolean | null;
+  /** null = lote não cancelado (ou sem chave para conferir) */
+  cancelOk: boolean | null;
   bids: BrowserBidCheck[];
   issues: string[];
   ok: boolean;
@@ -143,6 +145,32 @@ export async function verifyInBrowser(report: AuditReport, expectedLotId: string
     headOk = !!report.lot.headSignature && headHash === prev && (await verifyEd25519(key, report.lot.headSignature, headPayload));
     if (!headOk) issues.push('A assinatura do último elo não confere: algum lance pode ter sido removido do fim.');
   }
+  // Cancelamento: a assinatura cobre (lote, data, nº de lances, head) — conferida aqui também.
+  let cancelOk: boolean | null = null;
+  if (report.lot.cancelled || report.lot.cancelSignature || report.lot.cancelPayload) {
+    let payloadOk = false;
+    try {
+      const c = JSON.parse(report.lot.cancelPayload ?? 'null') as unknown[];
+      payloadOk =
+        Array.isArray(c) &&
+        c[0] === 'CANCEL' &&
+        c[1] === lotId &&
+        typeof c[2] === 'string' &&
+        Date.parse(c[2]) === Date.parse(report.lot.cancelledAt ?? '') &&
+        c[3] === report.bids.length &&
+        c[4] === report.lot.headHash;
+    } catch {
+      payloadOk = false;
+    }
+    if (key) {
+      cancelOk =
+        report.lot.cancelled &&
+        payloadOk &&
+        !!report.lot.cancelSignature &&
+        (await verifyEd25519(key, report.lot.cancelSignature, report.lot.cancelPayload!));
+      if (!cancelOk) issues.push('O cancelamento não confere com a assinatura (data, lances ou último elo divergentes).');
+    }
+  }
   if (report.lot.bidCount !== report.bids.length) {
     issues.push(`O lote declara ${report.lot.bidCount} lances, mas a cadeia tem ${report.bids.length}.`);
   }
@@ -153,8 +181,9 @@ export async function verifyInBrowser(report: AuditReport, expectedLotId: string
     key !== null &&
     genesisOk &&
     headOk === true &&
+    cancelOk !== false &&
     report.lot.bidCount === report.bids.length &&
     bids.every((b) => b.hashOk && b.linkOk && b.fieldsOk && b.signatureOk === true);
 
-  return { ed25519Supported, genesisOk, headOk, bids, issues, ok };
+  return { ed25519Supported, genesisOk, headOk, cancelOk, bids, issues, ok };
 }

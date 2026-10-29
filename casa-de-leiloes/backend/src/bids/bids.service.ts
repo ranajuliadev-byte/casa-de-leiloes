@@ -75,6 +75,8 @@ export class BidsService {
     //    espera aqui e enxerga o preço/líder já atualizados pelo anterior.
     if (!(await lockLot(tx, lotId))) throw new AppError('LOT_NOT_FOUND');
     const lot = await tx.lot.findUniqueOrThrow({ where: { id: lotId } });
+    // A mesma pessoa pode ter os perfis de leiloeiro e comprador: nunca no próprio lote.
+    if (lot.auctioneerId === user.id) throw new AppError('CANNOT_BID_OWN_LOT');
 
     // 2) "Agora" lido DEPOIS do lock — a fase é avaliada no instante em que o
     //    lance realmente entra na fila do lote, não quando a requisição chegou.

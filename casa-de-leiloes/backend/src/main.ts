@@ -7,6 +7,8 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors';
 import { assertSecretsAtBoot } from './common/crypto/audit-crypto';
 import { corsOrigins } from './common/cors';
+import { RejectNulPipe } from './common/reject-nul.pipe';
+import { isLocalEnv } from './mail/mail.service';
 
 /**
  * Valor do `trust proxy` do Express. Atrás de proxy (Render, Nginx), o IP real vem do
@@ -30,7 +32,7 @@ export async function configureApp(app: import('@nestjs/common').INestApplicatio
     origin: corsOrigins(),
     credentials: true,
   });
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new RejectNulPipe(), new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
   return app;
@@ -48,6 +50,11 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? 3001);
   await app.listen(port, '0.0.0.0');
   Logger.log(`API ouvindo em http://localhost:${port}/api`, 'Bootstrap');
+  // Fora do ambiente local, configurações que deixam a recuperação de senha quebrada em silêncio.
+  if (!isLocalEnv()) {
+    if (!process.env.SMTP_HOST) Logger.error('SMTP_HOST não definido: e-mails de recuperação de senha NÃO serão enviados.', 'Bootstrap');
+    if (!process.env.FRONTEND_URL) Logger.error('FRONTEND_URL não definido: links em e-mails e comprovantes apontarão para localhost.', 'Bootstrap');
+  }
 }
 
 if (require.main === module) {

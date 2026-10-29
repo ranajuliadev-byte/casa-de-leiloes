@@ -17,6 +17,7 @@ import { SettlementModule } from './settlement/settlement.module';
 import { AuditModule } from './audit/audit.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { MeModule } from './me/me.module';
+import { MailModule } from './mail/mail.service';
 import { RATE_LIMIT } from './common/rate-limits';
 
 /** ThrottlerGuard só para HTTP (no WebSocket não há `res` para os cabeçalhos). */
@@ -33,6 +34,7 @@ export class HttpThrottlerGuard extends ThrottlerGuard {
     ThrottlerModule.forRoot([RATE_LIMIT]),
     PrismaModule,
     ClockModule,
+    MailModule,
     AuthCommonModule,
     RealtimeModule,
     HealthModule,

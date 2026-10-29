@@ -1,5 +1,6 @@
 import { ApiError } from './api';
 import { formatBRL, formatDateLong } from './format';
+import { roleSlug } from './roles';
 
 export interface FriendlyError {
   title: string;
@@ -92,7 +93,25 @@ export function friendlyError(err: unknown, ctx: ErrorContext = {}): FriendlyErr
     case 'LOT_CANCELLED':
       return { title: 'Lote cancelado', message: 'O leiloeiro retirou este lote do pregão.' };
     case 'AUCTIONEER_CANNOT_BID':
-      return { title: 'Leiloeiros não dão lances', message: 'Entre com uma conta de licitante para participar.' };
+      return {
+        title: 'Perfil de leiloeiro não dá lances',
+        message: 'Se sua conta também tem o perfil de comprador, troque de perfil para dar lances; se não, cadastre-o com o mesmo e-mail e senha.',
+        action: { label: 'Cadastrar perfil de comprador', href: '/cadastro?perfil=comprador' },
+      };
+    case 'CANNOT_BID_OWN_LOT':
+      return { title: 'Este lote é seu', message: 'Você não pode dar lances nos lotes que você mesmo colocou em leilão.' };
+    case 'EMAIL_TAKEN':
+      return { title: 'E-mail já cadastrado', message: err.message, action: { label: 'Esqueci minha senha', href: '/recuperar-senha' } };
+    case 'ROLE_ALREADY_ENABLED':
+      return { title: 'Você já tem este perfil', message: err.message, action: { label: 'Entrar', href: '/entrar' } };
+    case 'ROLE_NOT_ENABLED':
+      return {
+        title: 'Perfil não habilitado',
+        message: err.message,
+        action: { label: 'Cadastrar este perfil', href: d.role === 'AUCTIONEER' || d.role === 'BIDDER' ? `/cadastro?perfil=${roleSlug(d.role)}` : '/cadastro' },
+      };
+    case 'INVALID_RESET_TOKEN':
+      return { title: 'Link inválido ou expirado', message: err.message, action: { label: 'Pedir um novo link', href: '/recuperar-senha' } };
     case 'INVALID_AMOUNT':
       return { title: 'Valor inválido', message: 'Digite um valor em reais, por exemplo 1.250,00.' };
     case 'UNAUTHORIZED':

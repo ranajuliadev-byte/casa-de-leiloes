@@ -16,8 +16,8 @@ datasource db {
 }
 
 enum Role {
-  AUCTIONEER // leiloeiro (vendedor): cria e gerencia lotes, não dá lances
-  BIDDER // licitante (cliente): deposita, dá lances, arremata
+  AUCTIONEER // leiloeiro (vendedor): cria e gerencia lotes; com este perfil ativo não dá lances
+  BIDDER // comprador (licitante): deposita, dá lances, arremata (nunca nos próprios lotes)
 }
 
 enum LedgerType {
@@ -33,7 +33,11 @@ model User {
   name         String
   email        String   @unique
   passwordHash String
-  role         Role
+  /// Perfis habilitados (uma pessoa pode ser leiloeira e compradora com o mesmo e-mail);
+  /// o perfil ATIVO da sessão vai no JWT, escolhido no login.
+  roles        Role[]
+  /// Incrementado na redefinição de senha: tokens emitidos antes (claim `ver`) deixam de valer.
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
 
   wallet   Wallet?
@@ -42,6 +46,20 @@ model User {
   leading  Lot[]     @relation("LotLeader")
   won      Lot[]     @relation("LotWinner")
   receipts Receipt[]
+  resetTokens PasswordResetToken[]
+}
+
+/// Recuperação de senha: só o HASH do token é guardado; uso único, com validade.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Wallet {

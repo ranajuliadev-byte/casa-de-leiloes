@@ -1,6 +1,6 @@
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
 
-const TOKEN_KEY = 'cl_token';
+export const TOKEN_KEY = 'cl_token';
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;

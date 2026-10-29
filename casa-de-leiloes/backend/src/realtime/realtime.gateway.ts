@@ -1,5 +1,4 @@
 import { Global, Injectable, Logger, Module } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,7 +8,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { userFromToken } from '../common/auth/auth.guards';
+import { SessionService } from '../common/auth/auth.guards';
 import { corsOrigins } from '../common/cors';
 import { LotPhase } from '../common/lot-phase';
 
@@ -85,11 +84,11 @@ export class RealtimeGateway implements OnGatewayConnection {
   private readonly logger = new Logger('Realtime');
   @WebSocketServer() server: Server;
 
-  constructor(private readonly jwt: JwtService) {}
+  constructor(private readonly session: SessionService) {}
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     const token = (client.handshake.auth as any)?.token ?? null;
-    const user = userFromToken(this.jwt, token);
+    const user = await this.session.resolve(token);
     if (user) {
       client.data.user = user;
       client.join(`user:${user.id}`);

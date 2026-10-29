@@ -10,7 +10,7 @@ refletida nos dois lados. Todos os agentes em `.claude/agents/` seguem este docu
 - **Prefixo**: toda rota REST começa com `/api`.
 - **Auth**: `Authorization: Bearer <accessToken>` (JWT, 7 dias). Papéis: `AUCTIONEER` (leiloeiro) e `BIDDER` (licitante).
 - **Erros**: sempre `{ statusCode, code, message, details? }`. `message` já vem em pt-BR. Códigos em `backend/src/common/errors.ts`.
-- **Rate limit** (por IP, por minuto): 600 em toda rota HTTP (exceto `/api/health`); 10 em `POST /api/auth/login` e 10 em `POST /api/auth/register` (`AUTH_RATE_LIMIT`); 60 em `GET /api/audit/lots/:id` e 60 em `GET /api/receipts/:code` (`AUDIT_RATE_LIMIT`). Acima disso: `429 { code: 'RATE_LIMITED' }`.
+- **Rate limit** (por IP, por minuto): 600 em toda rota HTTP (exceto `/api/health`); 10 em cada rota pública de `/api/auth` (`login`, `register`, `forgot-password`, `reset-password`; `AUTH_RATE_LIMIT`); 30 em `GET /api/artworks/search` (`ARTWORK_SEARCH_RATE_LIMIT`); 60 em `GET /api/audit/lots/:id` e 60 em `GET /api/receipts/:code` (`AUDIT_RATE_LIMIT`). Acima disso: `429 { code: 'RATE_LIMITED' }`.
 - **Relógio**: respostas de lote trazem `serverTime`; o front calcula `offset = serverTime - Date.now()` para a contagem regressiva não depender do relógio do usuário.
 - **Privacidade**: em vitrine, sala, auditoria e comprovante, licitantes aparecem só como **pseudônimo por lote** (`"Licitante 7KQ2MX"`). Nunca nome/e-mail/id.
 
@@ -25,7 +25,7 @@ Calculada por `backend/src/common/lot-phase.ts` a partir de `startsAt`, `endsAt`
 type Role = 'AUCTIONEER' | 'BIDDER';
 type LotPhase = 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
 
-interface UserView { id: string; name: string; email: string; role: Role }
+interface UserView { id: string; name: string; email: string; role: Role; roles: Role[] } // role = perfil ATIVO (o do token); roles = perfis da conta
 
 interface WalletView { balanceCents: number; committedCents: number; availableCents: number }
 
@@ -118,8 +118,20 @@ interface AuctioneerLotView extends LotSummary {
 | Método | Rota | Auth | Corpo | Resposta |
 |---|---|---|---|---|
 | POST | `/api/auth/register` | — | `{ name, email, password (min 6), role }` | `{ accessToken, user: UserView }` |
-| POST | `/api/auth/login` | — | `{ email, password }` | `{ accessToken, user: UserView }` |
+| POST | `/api/auth/login` | — | `{ email, password, role? }` | `{ accessToken, user: UserView }` |
+| POST | `/api/auth/switch-role` | sim | `{ role }` | `{ accessToken, user: UserView }` |
+| POST | `/api/auth/forgot-password` | — | `{ email }` | `{ ok: true, message }` (sempre igual) |
+| POST | `/api/auth/reset-password` | — | `{ token, password (min 6) }` | `{ ok: true }` |
 | GET | `/api/auth/me` | sim | — | `{ user: UserView, wallet: WalletView \| null }` |
+
+**Dois perfis por conta.** Uma pessoa pode ser leiloeira e compradora com o mesmo e-mail: a conta tem `roles` e o JWT leva o perfil **ativo** (`role`).
+- `register` com e-mail novo cria a conta. Com e-mail já cadastrado e a **mesma senha**, habilita o perfil pedido na mesma conta; senha diferente → 409 `EMAIL_TAKEN`; perfil que a conta já tem → 409 `ROLE_ALREADY_ENABLED`.
+- `login` com `role`: perfil que a conta não tem → 403 `ROLE_NOT_ENABLED`. Sem `role`, vale o único perfil da conta (conta com os dois → 400 `VALIDATION_ERROR`).
+- `switch-role` troca o perfil ativo sem nova senha (só para perfis da conta; o mesmo perfil → 409 `ROLE_ALREADY_ACTIVE`). O token novo **herda a expiração** do atual: trocar de perfil não renova a sessão.
+- **Sessão revogável:** o JWT leva `ver` (= `User.tokenVersion`). Toda requisição autenticada (HTTP e WebSocket) confere no banco a versão e se a conta ainda tem o perfil do token; redefinir a senha incrementa a versão e derruba todas as sessões abertas (401).
+- Ninguém dá lance nos próprios lotes, mesmo com o perfil de comprador ativo → 403 `CANNOT_BID_OWN_LOT`.
+
+**Recuperação de senha.** `forgot-password` responde sempre igual (não revela se o e-mail existe). Se existir, envia por e-mail o link `FRONTEND_URL/redefinir-senha?token=<43 caracteres base64url>`, de uso único e válido por 30 min; um pedido novo invalida os anteriores, mas só depois de 1 min do último link (pedidos repetidos antes disso não geram nem enviam nada). O link é gerado em segundo plano (o tempo de resposta não depende de a conta existir) e o e-mail não inclui o nome cadastrado. Só o hash SHA-256 do token fica no banco. `reset-password` com token inválido, usado ou expirado → 400 `INVALID_RESET_TOKEN`. A senha vale para os dois perfis.
 
 Todo usuário tem carteira (criada no cadastro). Leiloeiro recebe créditos dos arremates nela.
 
@@ -154,10 +166,11 @@ Recusas (HTTP 4xx, `code`):
 - `BELOW_MINIMUM` → `details: { minimumCents }`
 - `INSUFFICIENT_BALANCE` → `details: { availableCents, requiredCents }`
 - `ALREADY_WINNING`
-- `AUCTIONEER_CANNOT_BID`
+- `AUCTIONEER_CANNOT_BID` (perfil ativo de leiloeiro)
+- `CANNOT_BID_OWN_LOT` (lote da própria conta)
 - `INVALID_AMOUNT`
 
-Ordem de checagem: papel → valor (`INVALID_AMOUNT`) → lote existe (`LOT_NOT_FOUND`) → cancelado → fase (não iniciado / encerrado) → já líder → mínimo → saldo.
+Ordem de checagem: papel → valor (`INVALID_AMOUNT`) → lote existe (`LOT_NOT_FOUND`) → próprio lote (`CANNOT_BID_OWN_LOT`) → cancelado → fase (não iniciado / encerrado) → já líder → mínimo → saldo.
 
 ### Minha área (licitante)
 | GET | `/api/me/bids` | BIDDER | — | `{ items: MyLotView[] }` |
@@ -198,6 +211,9 @@ interface AuditReport {
       cancelOk: boolean;                  // cancelamento (ou ausência dele) com assinatura válida
       ledgerOk: boolean;                  // extrato das carteiras íntegro e 1:1 com os lances
     };
+    // Última verificação COMPLETA dos extratos (recalcula o hash de cada lançamento, job a
+    // cada 1 min). null = nenhuma desde que a API subiu: só a checagem agregada valeu.
+    ledgerCheckedAt: string | null;
   };
   publicKey: { algorithm: 'Ed25519'; publicKeyRawBase64: string };
 }
@@ -249,7 +265,7 @@ Ao reconectar, o front deve refazer `lot:join` e buscar `GET /api/lots/:id` de n
 
 ## Regras de negócio (resumo)
 
-1. Lance só em lote `LIVE` (`startsAt ≤ agora < endsAt`), avaliado **dentro da transação, com lock**. Ordem de checagem: papel → valor → lote existe → cancelado → fase → já líder → mínimo → saldo.
+1. Lance só em lote `LIVE` (`startsAt ≤ agora < endsAt`), avaliado **dentro da transação, com lock**. Ordem de checagem: papel → valor → lote existe → próprio lote → cancelado → fase → já líder → mínimo → saldo.
 2. 1º lance ≥ lance inicial; seguintes ≥ lance atual + incremento mínimo.
 3. Líder não cobre o próprio lance.
 4. Disponível = total − comprometido. Ao liderar, valor fica comprometido; superado → volta ao disponível **na mesma transação**.

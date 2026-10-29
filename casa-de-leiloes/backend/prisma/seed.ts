@@ -29,6 +29,7 @@ import {
 import { appendLedger, LedgerOp } from '../src/common/ledger';
 import { AicArtwork, AicClient } from '../src/artworks/aic.client';
 import { fromAic } from '../src/artworks/aic.mapper';
+import { WikimediaImages } from '../src/artworks/wikimedia.client';
 import { ANTI_SNIPING_WINDOW_MS } from '../src/common/clock';
 import { BCRYPT_COST } from '../src/auth/password';
 
@@ -41,9 +42,10 @@ const BRL = (reais: number) => Math.round(reais * 100); // reais → centavos
 
 export const SEED_PASSWORD = 'leilao123';
 export const SEED_USERS = {
-  auctioneer: { name: 'Galeria Aurora', email: 'leiloeiro@leilao.dev', role: 'AUCTIONEER' as Role },
-  ana: { name: 'Ana Souza', email: 'ana@leilao.dev', role: 'BIDDER' as Role },
-  bruno: { name: 'Bruno Lima', email: 'bruno@leilao.dev', role: 'BIDDER' as Role },
+  auctioneer: { name: 'Galeria Aurora', email: 'leiloeiro@leilao.dev', roles: ['AUCTIONEER'] as Role[] },
+  // Ana tem os dois perfis (mesmo e-mail e senha): entra como compradora ou como leiloeira.
+  ana: { name: 'Ana Souza', email: 'ana@leilao.dev', roles: ['BIDDER', 'AUCTIONEER'] as Role[] },
+  bruno: { name: 'Bruno Lima', email: 'bruno@leilao.dev', roles: ['BIDDER'] as Role[] },
 };
 export const SEED_DEPOSIT_CENTS = BRL(50_000);
 
@@ -154,8 +156,8 @@ async function fetchFromAic(ids: number[]): Promise<Map<number, AicArtwork> | nu
 }
 
 /** Mesmo mapeamento do app (artworks.service), com a data da busca. */
-function toArtworkRow(a: AicArtwork, fetchedAt: Date): Prisma.ArtworkCreateInput {
-  return { ...fromAic(a), fetchedAt };
+function toArtworkRow(a: AicArtwork, fetchedAt: Date, commonsFile?: string): Prisma.ArtworkCreateInput {
+  return { ...fromAic(a, commonsFile), fetchedAt };
 }
 
 // ---------------------------------------------------------------- simulação do motor
@@ -378,7 +380,9 @@ export async function runSeed(prisma: PrismaClient, opts: SeedOptions = {}): Pro
   // Obras: API real (se responder) com fallback no snapshot embutido.
   const ids = ARTWORK_SNAPSHOT.map((a) => a.id);
   const live = opts.offline ? null : await fetchFromAic(ids);
-  const artworks = ARTWORK_SNAPSHOT.map((snap) => toArtworkRow(live?.get(snap.id) ?? snap, now));
+  // Imagens pelo Wikimedia Commons (o IIIF do AIC bloqueia <img> com desafio anti-bot).
+  const files = opts.offline ? new Map<number, string>() : await new WikimediaImages().filesFor(ids);
+  const artworks = ARTWORK_SNAPSHOT.map((snap) => toArtworkRow(live?.get(snap.id) ?? snap, now, files.get(snap.id)));
   const artworkSource: SeedResult['artworkSource'] = live && live.size > 0 ? 'live' : 'snapshot';
   const art = (externalId: number) => artworks.find((a) => a.externalId === externalId)!;
 
@@ -394,9 +398,9 @@ export async function runSeed(prisma: PrismaClient, opts: SeedOptions = {}): Pro
       for (const a of artworks) await tx.artwork.create({ data: a });
 
       const wallets = new Map<string, WalletState>();
-      const mkUser = async (u: { name: string; email: string; role: Role }, depositCents: number): Promise<SeedUser> => {
+      const mkUser = async (u: { name: string; email: string; roles: Role[] }, depositCents: number): Promise<SeedUser> => {
         const created = await tx.user.create({
-          data: { name: u.name, email: u.email, role: u.role, passwordHash, createdAt: at(-30 * DAY), wallet: { create: {} } },
+          data: { name: u.name, email: u.email, roles: u.roles, passwordHash, createdAt: at(-30 * DAY), wallet: { create: {} } },
           include: { wallet: true },
         });
         const su = { id: created.id, walletId: created.wallet!.id };
@@ -574,7 +578,7 @@ async function main() {
     console.log('');
     console.log('  Credenciais (senha de todos: leilao123)');
     console.log('    Leiloeiro  leiloeiro@leilao.dev');
-    console.log('    Licitante  ana@leilao.dev    (saldo R$ 50.000,00)');
+    console.log('    Licitante  ana@leilao.dev    (saldo R$ 50.000,00; também tem o perfil de leiloeira)');
     console.log('    Licitante  bruno@leilao.dev  (saldo R$ 50.000,00)');
     console.log('');
     console.log(`  Lote ao vivo (Ana lidera):        ${front}/lotes/${r.lots.liveAna}`);

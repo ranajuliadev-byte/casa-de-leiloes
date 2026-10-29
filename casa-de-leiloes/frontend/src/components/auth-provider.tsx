@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { apiFetch, ApiError, getToken, setToken } from '@/lib/api';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { apiFetch, ApiError, getToken, setToken, TOKEN_KEY } from '@/lib/api';
 import { getSocket, resetSocketAuth } from '@/lib/socket';
 import { formatBRL } from '@/lib/format';
 import type { AuthResponse, MeResponse, OutbidEvent, Role, UserView, WalletView, WonEvent } from '@/lib/types';
@@ -12,7 +12,9 @@ interface AuthContextValue {
   wallet: WalletView | null;
   /** true até sabermos se há sessão (evita piscar "Entrar"). */
   loading: boolean;
-  login: (email: string, password: string) => Promise<UserView>;
+  login: (email: string, password: string, role: Role) => Promise<UserView>;
+  /** Troca o perfil ativo (conta com os dois perfis) sem novo login. */
+  switchRole: (role: Role) => Promise<UserView>;
   register: (input: { name: string; email: string; password: string; role: Role }) => Promise<UserView>;
   logout: () => void;
   setWallet: (w: WalletView) => void;
@@ -32,8 +34,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [wallet, setWallet] = useState<WalletView | null>(null);
   const [loading, setLoading] = useState(true);
   const { push } = useToast();
+  // Sobe a cada login/troca de perfil/logout: respostas de /me pedidas antes são descartadas
+  // (senão um refresh atrasado devolveria o perfil antigo por cima do novo).
+  const session = useRef(0);
 
   const refresh = useCallback(async () => {
+    const id = session.current;
     if (!getToken()) {
       setUser(null);
       setWallet(null);
@@ -42,11 +48,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const me = await apiFetch<MeResponse>('/api/auth/me');
+      if (id !== session.current) return;
       setUser(me.user);
       setWallet(me.wallet);
     } catch (e) {
       // Token inválido/expirado: limpa. Erro de rede: mantém o token para tentar depois.
-      if (e instanceof ApiError && e.status === 401) {
+      if (id === session.current && e instanceof ApiError && e.status === 401) {
         setToken(null);
         setUser(null);
         setWallet(null);
@@ -99,12 +106,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const afterAuth = useCallback(
     async (res: AuthResponse) => {
+      const id = ++session.current;
       setToken(res.accessToken);
       setUser(res.user);
+      setWallet(null); // nunca mostrar a carteira de outra conta enquanto a nova não chega
       resetSocketAuth();
       try {
         const me = await apiFetch<MeResponse>('/api/auth/me');
-        setWallet(me.wallet);
+        if (id === session.current) setWallet(me.wallet);
       } catch {
         /* carteira chega depois */
       }
@@ -114,8 +123,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const login = useCallback(
-    async (email: string, password: string) =>
-      afterAuth(await apiFetch<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password }, auth: false })),
+    async (email: string, password: string, role: Role) =>
+      afterAuth(await apiFetch<AuthResponse>('/api/auth/login', { method: 'POST', body: { email, password, role }, auth: false })),
+    [afterAuth],
+  );
+
+  const switchRole = useCallback(
+    async (role: Role) => afterAuth(await apiFetch<AuthResponse>('/api/auth/switch-role', { method: 'POST', body: { role } })),
     [afterAuth],
   );
 
@@ -126,15 +140,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    session.current++;
     setToken(null);
     setUser(null);
     setWallet(null);
     resetSocketAuth();
   }, []);
 
+  // Outra aba entrou, saiu ou trocou de perfil (o token fica no localStorage, comum a todas):
+  // esta aba acompanha, senão mostraria o perfil antigo com um token que já é outro.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== TOKEN_KEY && e.key !== null) return;
+      session.current++;
+      resetSocketAuth();
+      void refresh();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [refresh]);
+
   const value = useMemo(
-    () => ({ user, wallet, loading, login, register, logout, setWallet, refresh }),
-    [user, wallet, loading, login, register, logout, refresh],
+    () => ({ user, wallet, loading, login, switchRole, register, logout, setWallet, refresh }),
+    [user, wallet, loading, login, switchRole, register, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -14,7 +14,8 @@ import { useAuth } from './auth-provider';
 import { BidForm } from './bid-form';
 import { PhaseTag } from './lot-bits';
 import { displayPrice } from './lot-card';
-import { ArtworkImage, buttonClass, Container, ErrorState, PageLoading } from './ui';
+import { ArtworkImage, Button, buttonClass, Container, ErrorState, PageLoading } from './ui';
+import { useRoleSwitch } from './use-role-switch';
 
 // ---------- relógio grande ----------
 function BigClock({ lot, offset }: { lot: LotDetail; offset: number }) {
@@ -156,6 +157,8 @@ function ActionPanel({ lot, onPlaced }: { lot: LotDetail; onPlaced: Parameters<t
   const { user, wallet, loading } = useAuth();
   const v = lot.viewer;
   const isBidder = Boolean(user && user.role === 'BIDDER' && v?.role !== 'AUCTIONEER');
+  // Conta com os dois perfis entrando como leiloeiro: troca aqui mesmo para dar lance.
+  const toBidder = useRoleSwitch('BIDDER');
 
   if (lot.phase === 'ENDED') {
     return (
@@ -218,6 +221,13 @@ function ActionPanel({ lot, onPlaced }: { lot: LotDetail; onPlaced: Parameters<t
               Ir ao painel
             </Link>
           </>
+        ) : toBidder ? (
+          <div className="flex flex-col items-start gap-3">
+            <span>Você está usando o perfil de leiloeiro, que não dá lances. Sua conta também tem o perfil de comprador.</span>
+            <Button variant="secondary" size="sm" loading={toBidder.busy} onClick={() => void toBidder.run()}>
+              {toBidder.label} para dar lance
+            </Button>
+          </div>
         ) : (
           'Você entrou como leiloeiro. Leiloeiros acompanham os pregões, mas não dão lances.'
         )}

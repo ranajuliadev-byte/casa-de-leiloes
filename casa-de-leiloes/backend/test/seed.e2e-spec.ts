@@ -27,10 +27,10 @@ describe('Seed de demonstração', () => {
 
   it('cria leiloeiro e dois licitantes com R$ 50.000', async () => {
     const users = await prisma.user.findMany({ include: { wallet: true }, orderBy: { email: 'asc' } });
-    expect(users.map((u) => [u.email, u.role])).toEqual([
-      ['ana@leilao.dev', 'BIDDER'],
-      ['bruno@leilao.dev', 'BIDDER'],
-      ['leiloeiro@leilao.dev', 'AUCTIONEER'],
+    expect(users.map((u) => [u.email, u.roles])).toEqual([
+      ['ana@leilao.dev', ['BIDDER', 'AUCTIONEER']],
+      ['bruno@leilao.dev', ['BIDDER']],
+      ['leiloeiro@leilao.dev', ['AUCTIONEER']],
     ]);
     const deposits = await prisma.ledgerEntry.findMany({ where: { type: 'DEPOSIT' } });
     expect(deposits).toHaveLength(2);

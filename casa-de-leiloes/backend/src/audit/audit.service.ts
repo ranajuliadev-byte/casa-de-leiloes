@@ -59,6 +59,8 @@ export interface AuditVerification {
   checkedAt: string;
   issues: AuditIssue[];
   summary: AuditSummary;
+  /** última verificação COMPLETA dos extratos (job periódico); null = nenhuma desde que a API subiu */
+  ledgerCheckedAt?: string | null;
 }
 
 export interface AuditReport {
@@ -620,7 +622,7 @@ export class AuditService {
       },
       genesisPayload: genesisPayload(genesisInputOf(lot)),
       bids: auditBids,
-      verification,
+      verification: this.withLedgerCheck(verification),
       publicKey: { algorithm: 'Ed25519', publicKeyRawBase64: auditKeys().publicKeyRawB64 },
     };
   }
@@ -629,7 +631,11 @@ export class AuditService {
   async verifyLot(lotId: string): Promise<AuditVerification | null> {
     const data = await this.loadSnapshot(lotId);
     if (!data) return null;
-    return verifyChain(data.lot, data.bids, this.clock.now(), data.ledger).verification;
+    return this.withLedgerCheck(verifyChain(data.lot, data.bids, this.clock.now(), data.ledger).verification);
+  }
+
+  private withLedgerCheck(v: AuditVerification): AuditVerification {
+    return { ...v, ledgerCheckedAt: this.integrity.checkedAt()?.toISOString() ?? null };
   }
 
   private async loadSnapshot(lotId: string) {
