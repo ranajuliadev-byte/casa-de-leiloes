@@ -7,8 +7,9 @@ e conferir que ele não foi adulterado, inclusive refazendo a verificação no p
 
 > Teste técnico **Elite Dev, Verzel**.
 >
-> - **Aplicação (front):** `<preencher: URL da Vercel>`
-> - **API:** `<preencher: URL do Render>/api/health`
+> - **Aplicação (front):** https://casa-de-leiloes-tau.vercel.app
+> - **API:** https://casa-de-leiloes-v4pm.onrender.com/api/health
+> - **Repositório:** https://github.com/ranajuliadev-byte/casa-de-leiloes
 
 ---
 
@@ -624,17 +625,32 @@ Em [uptimerobot.com](https://uptimerobot.com): **New monitor** → HTTP(s) → `
 
 ## 15. Uso de IA
 
-**Ferramenta:** Claude (Anthropic), trabalhando com **agentes especializados**. As definições dos agentes estão versionadas em [`.claude/agents/`](.claude/agents/) e podem ser reutilizadas no Claude Code:
+Usei IA em todas as etapas do projeto, do código ao deploy, e prefiro deixar claro como.
 
-| Agente | O que fez |
+**Ferramenta:** Claude Code (Anthropic). Em vez de um único assistente fazendo tudo, dividi o trabalho entre **agentes especializados**, cada um com um escopo fechado. As definições estão versionadas em [`.claude/agents/`](.claude/agents/) e podem ser reaproveitadas:
+
+| Agente | Responsável por |
 |---|---|
-| (orquestração) | Schema Prisma, contrato de API/eventos (`docs/CONTRATO.md`), base de criptografia da auditoria, relógio injetável, gateway WebSocket |
-| `backend-core` | Auth, carteira, integração resiliente com a API do AIC, lotes e cancelamento |
-| `backend-leilao` | Motor de lances com lock, anti-sniping, liquidação, auditoria, comprovantes, testes de concorrência |
-| `frontend` | Todas as telas Next.js, tempo real, verificação no navegador, dark mode |
-| `qa-devops` | Seed, Docker Compose, Render/Vercel, este README |
+| (orquestração) | Schema Prisma, contrato de API e eventos (`docs/CONTRATO.md`), base da criptografia da auditoria, relógio injetável, gateway WebSocket |
+| `backend-core` | Autenticação, carteira, integração resiliente com a API do AIC, lotes e cancelamento |
+| `backend-leilao` | Motor de lances com lock, anti-sniping, liquidação, auditoria, comprovantes e testes de concorrência |
+| `frontend` | Todas as telas em Next.js, tempo real, verificação no navegador, dark mode |
+| `qa-devops` | Seed, Docker Compose, configuração de deploy e este README |
 | `revisor` | Revisão independente contra o enunciado, com ataques reais ao banco e rajadas de lances paralelos |
 
-**Como o processo foi conduzido:** o contrato entre front e back foi escrito primeiro, para os agentes trabalharem em paralelo sem divergir. Depois da implementação, um agente revisor que não participou da escrita testou o sistema contra o PDF e encontrou problemas reais (rollback do head da cadeia não detectado, `endsAt`/`cancelledAt` alteráveis no banco, estouro de `INT` no depósito, recusas que não apareciam na UI, sala que não mudava de fase sozinha). Todos foram corrigidos e viraram testes automatizados.
+### Como conduzi o processo
 
-> `<preencher>`: **o que eu revisei/ajustei pessoalmente** e as decisões que tomei (ex.: escolha do tema, da stack, leitura do código das regras de lance, testes manuais que fiz, partes que reescrevi).
+1. **Contrato antes do código.** O primeiro passo foi o `docs/CONTRATO.md`, com rotas, tipos, eventos e códigos de erro. Com ele fechado, front e back puderam ser desenvolvidos em paralelo sem divergir.
+2. **Regras fixas para todos os agentes.** O [`CLAUDE.md`](CLAUDE.md) define as regras que nenhum agente podia quebrar: dinheiro em centavos, tempo sempre pelo `Clock`, lance e liquidação dentro de transação com `SELECT ... FOR UPDATE`, pseudônimo em tudo que é público.
+3. **Revisão por quem não escreveu o código.** Depois da implementação, o agente `revisor`, que não participou da escrita, testou o sistema contra o PDF do enunciado, adulterando o banco e disparando lances simultâneos. Ele encontrou problemas reais: rollback do head da cadeia que passava despercebido, `endsAt` e `cancelledAt` alteráveis direto no banco, estouro de `INT` no depósito, recusas de lance que não apareciam na tela e uma sala que não mudava de fase sozinha. Cada um foi corrigido e virou teste automatizado.
+4. **Deploy.** Também usei IA para escolher uma hospedagem gratuita que não cortasse nenhuma funcionalidade (WebSocket, job de liquidação e e-mail) e para resolver os problemas que só apareceram em produção, como a validação TLS do banco no Supabase e o bloqueio de SMTP no plano gratuito do Render.
+
+### O que fiz pessoalmente
+
+- Conduzi os agentes: defini o que cada um faria, revisei as entregas e decidi o que aceitar ou pedir para refazer.
+- Testei a aplicação manualmente seguindo o [roteiro da seção 7](#7-roteiro-de-avaliação-passo-a-passo), com duas janelas para simular dois licitantes.
+- Fiz o deploy: criei e configurei Supabase, Render, Vercel, Brevo e UptimeRobot e validei tudo em produção.
+
+### Onde não confiei só na IA
+
+As partes críticas (regras de lance, saldo comprometido, liquidação e auditoria) estão cobertas por testes automatizados que rodam contra um PostgreSQL real, incluindo testes de concorrência e de adulteração do banco. Nenhuma mudança entrava se os testes não passassem.
